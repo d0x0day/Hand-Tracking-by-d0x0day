@@ -1,52 +1,33 @@
-```markdown
-# GestureFlow: Intuitive Hand Gesture Control for Linux 🖐️💻
-
-[
-https://img.shields.io/badge/OS-Linux%20Only-blue.svg?style=for-the-badge&logo=linux
-](https://www.linux.org/)
-[
-https://img.shields.io/badge/Python-3.8%2B-blueviolet.svg?style=for-the-badge&logo=python
-](https://www.python.org/)
-[
-https://img.shields.io/badge/Powered%20By-MediaPipe%20Hands-orange.svg?style=for-the-badge&logo=google
-](https://developers.google.com/mediapipe/solutions/vision/hand_landmarker)
-[
-https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge
-](LICENSE)
+# Intuitive Hand Gesture Control for Linux 🖐️💻
 
 ## ✨ Overview
 
-GestureFlow transforms your webcam into a powerful input device, allowing you to control aspects of your Linux desktop using natural hand gestures. Built with MediaPipe for robust hand tracking and OpenCV for real-time video processing, this application offers an intuitive and engaging way to interact with your system. Adjust volume, display custom icons, and even launch URLs—all with simple hand movements!
+Transforms your webcam into a powerful input device, allowing you to control aspects of your Linux desktop using natural hand gestures. Built with MediaPipe for robust hand tracking and OpenCV for real-time video processing, this application offers an intuitive and engaging way to interact with your system. Adjust volume, display custom icons, and even launch URLs—all with simple hand movements!
 
 Please note: This application is designed exclusively for Linux systems due to its reliance on PulseAudio for system volume control.
 
 ## 🎥 Demo
 
-Watch GestureFlow in action! This video demonstrates the main functionalities including volume control, custom icon display, and the URL-opening clap gesture.
+Watch in action! This video demonstrates the main functionalities including volume control, custom icon display, and the URL-opening clap gesture.
 
-<details>
-<summary>Click to view demo video</summary>
-
-*For the best experience, download the video or view it on a platform that supports inline MP4 playback.*
-*(GitHub's markdown might render MP4s as a download link rather than an embedded player. For guaranteed inline playback, consider converting a short demo to a .gif or hosting it on a service like YouTube and embedding it.)*
-
-Here's how to link an MP4 directly:
-*Make sure your demo.mp4 file is in your repository, for example, in an assets folder.*
-markdown
-
-copy
-
-</details>
+![Demo Video](./demo.mp4)
 
 ## 🚀 Features
 
 •   **Volume Control (Right Hand 🟢):** Adjust your system's master volume by varying the distance between your thumb and index finger.
+
 •   **Volume Toggle (Right Hand "V" Gesture):** Activate or deactivate volume control by performing a "Victory" gesture with your right hand.
+
 •   **Custom Icon Display (Left Hand "Gun" Gesture 🔴):** Make a "Gun" gesture with your left hand to display a customizable icon (icon.png) on the screen, centered at your wrist.
+
 •   **URL Launcher (Clap Gesture 🟡):** Bring both hands together in a "Clap" gesture to automatically open a predefined URL in your web browser.
+
 •   **Real-time Visual Feedback:** See your hand landmarks and gesture statuses overlayed directly on your webcam feed.
+
 •   **Dynamic Calibration:** Volume control automatically calibrates to your hand's range of motion.
+
 •   **Customizable Icon:** Easily replace icon.png with your own image.
+
 •   **Linux-Exclusive:** Seamless integration with PulseAudio for system-level volume control.
 
 ## ⚠️ Linux Only!
@@ -58,7 +39,7 @@ This application utilizes the pactl command-line utility for PulseAudio to contr
 Before you begin, ensure you have the following installed on your **Linux system**:
 
 •   **Python 3.8+**:
-
+```
 bash
   sudo apt update
   sudo apt install python3 python3-pip
@@ -87,7 +68,7 @@ bash
   
 ```
 bash
-  python3 -m venv venv
+  python3 -m venv .venv
   source venv/bin/activate
 ```
 
@@ -110,26 +91,22 @@ bash
 4. Optional: Add a custom icon.
   Place your desired .png image named icon.png in the root directory of the project. If icon.png is not found, a default red "GUN" icon will be generated.
 
-5. Place your demo video.
-  If you want to use the inline video linking feature above, make sure your video file (e.g., demo.mp4) is located in the assets/ directory (create it if it doesn't exist).
-
 ▌🚀 Usage
 
-Once installed, running GestureFlow is straightforward:
+Once installed, running is straightforward:
 
 1. Activate your virtual environment (if you created one):
   
 ```
 bash
-  source venv/bin/activate
+  source .venv/bin/activate
 ```
 
 2. Run the application:
   
 ```
 bash
-  python your_main_script_name.py 
-  # (Assuming your code is in a file like main.py or app.py)
+  python main.py 
 ```
 
 3. Interact with gestures:
@@ -147,7 +124,7 @@ bash
 
 ▌⚙️ Configuration
 
-You can customize some behaviors directly in the your_main_script_name.py file:
+You can customize some behaviors directly in the main.py file:
 
 •  Clap Gesture URL:
   Change the URL that opens when you perform the clap gesture:
@@ -188,9 +165,7 @@ Contributions are welcome! If you have ideas for new gestures, performance impro
 4. Push to the branch (git push origin feature/AmazingFeature).
 5. Open a Pull Request.
 
-▌📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+or contact with me [D0X0DAY](https://t.me/DamiSvan)
 
 ▌🙏 Acknowledgments
 
@@ -199,5 +174,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 Made with ❤️ by d0x0day
-
-```
