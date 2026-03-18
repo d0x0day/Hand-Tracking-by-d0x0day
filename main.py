@@ -1,20 +1,150 @@
 import mediapipe as mp
+from mediapipe.tasks.python import vision
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
 import os
 import webbrowser
+import platform
+import subprocess
 
-# Initialize MediaPipe components
-mp_drawing = mp.solutions.drawing_utils
-mp_hands = mp.solutions.hands
+BaseOptions = mp.tasks.BaseOptions
 
-# Initialize MediaPipe Hands
-hands = mp_hands.Hands(
-    max_num_hands=2,
-    min_detection_confidence=0.75,
-    min_tracking_confidence=0.5,
-)
+# Platform detection for cross-platform compatibility
+IS_WINDOWS = platform.system() == "Windows"
+IS_LINUX = platform.system() == "Linux"
+
+# Initialize Windows volume control if on Windows
+if IS_WINDOWS:
+    try:
+        from comtypes import CLSCTX_ALL
+        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+        devices = AudioUtilities.GetSpeakers()
+        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+        volume_controller = interface.QueryInterface(IAudioEndpointVolume)
+    except ImportError:
+        print("Warning: pycaw not installed. Windows volume control will be disabled.")
+        print("Install with: pip install pycaw comtypes")
+        volume_controller = None
+    except Exception as e:
+        print(f"Warning: Failed to initialize Windows volume control: {e}")
+        volume_controller = None
+else:
+    volume_controller = None
+
+# Drawing utilities (custom implementation since mp.solutions is removed)
+class DrawingUtils:
+    """Custom drawing utilities to replace mp.solutions.drawing_utils"""
+    
+    @staticmethod
+    def draw_landmarks(image, landmarks, connections=None, landmark_drawing_spec=None, connection_drawing_spec=None):
+        """Draw hand landmarks on image."""
+        h, w = image.shape[:2]
+        
+        # Default colors
+        landmark_color = (0, 255, 0) if landmark_drawing_spec is None else landmark_drawing_spec.color
+        connection_color = (0, 255, 0) if connection_drawing_spec is None else connection_drawing_spec.color
+        landmark_thickness = 2 if landmark_drawing_spec is None else landmark_drawing_spec.thickness
+        connection_thickness = 2 if connection_drawing_spec is None else connection_drawing_spec.thickness
+        circle_radius = 4 if landmark_drawing_spec is None else getattr(landmark_drawing_spec, 'circle_radius', 4)
+        
+        # Draw connections
+        if connections:
+            for connection in connections:
+                start_idx = connection[0]
+                end_idx = connection[1]
+                if start_idx < len(landmarks) and end_idx < len(landmarks):
+                    start_point = (int(landmarks[start_idx].x * w), int(landmarks[start_idx].y * h))
+                    end_point = (int(landmarks[end_idx].x * w), int(landmarks[end_idx].y * h))
+                    cv2.line(image, start_point, end_point, connection_color, connection_thickness)
+        
+        # Draw landmarks
+        for landmark in landmarks:
+            x = int(landmark.x * w)
+            y = int(landmark.y * h)
+            cv2.circle(image, (x, y), circle_radius, landmark_color, -1)
+
+
+class DrawingSpec:
+    """Drawing specification for landmarks and connections."""
+    def __init__(self, color=(0, 255, 0), thickness=2, circle_radius=4):
+        self.color = color
+        self.thickness = thickness
+        self.circle_radius = circle_radius
+
+
+# Hand landmark indices (matching original MediaPipe Hands)
+class HandLandmark:
+    """Hand landmark indices."""
+    WRIST = 0
+    THUMB_CMC = 1
+    THUMB_MCP = 2
+    THUMB_IP = 3
+    THUMB_TIP = 4
+    INDEX_FINGER_MCP = 5
+    INDEX_FINGER_PIP = 6
+    INDEX_FINGER_DIP = 7
+    INDEX_FINGER_TIP = 8
+    MIDDLE_FINGER_MCP = 9
+    MIDDLE_FINGER_PIP = 10
+    MIDDLE_FINGER_DIP = 11
+    MIDDLE_FINGER_TIP = 12
+    RING_FINGER_MCP = 13
+    RING_FINGER_PIP = 14
+    RING_FINGER_DIP = 15
+    RING_FINGER_TIP = 16
+    PINKY_MCP = 17
+    PINKY_PIP = 18
+    PINKY_DIP = 19
+    PINKY_TIP = 20
+
+
+# Hand connections (skeleton)
+HAND_CONNECTIONS = [
+    (0, 1), (1, 2), (2, 3), (3, 4),  # Thumb
+    (0, 5), (5, 6), (6, 7), (7, 8),  # Index finger
+    (0, 9), (9, 10), (10, 11), (11, 12),  # Middle finger
+    (0, 13), (13, 14), (14, 15), (15, 16),  # Ring finger
+    (0, 17), (17, 18), (18, 19), (19, 20),  # Pinky
+    (5, 9), (9, 13), (13, 17)  # Palm
+]
+
+# Initialize MediaPipe Hand Landmarker with Tasks API
+def create_hand_landmarker():
+    """Create hand landmarker using MediaPipe Tasks API."""
+    # Download model if not exists
+    model_path = "hand_landmarker.task"
+    if not os.path.exists(model_path):
+        print(f"Downloading hand landmarker model...")
+        import urllib.request
+        url = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+        try:
+            urllib.request.urlretrieve(url, model_path)
+            print(f"Model saved to {model_path}")
+        except Exception as e:
+            print(f"Failed to download model: {e}")
+            print("Please download manually from: https://developers.google.com/mediapipe/solutions/vision/hand_landmarker")
+            return None
+    
+    base_options = BaseOptions(model_asset_path=model_path)
+    options = vision.HandLandmarkerOptions(
+        base_options=base_options,
+        num_hands=2,
+        min_hand_detection_confidence=0.75,
+        min_hand_presence_confidence=0.5,
+        min_tracking_confidence=0.5
+    )
+    return vision.HandLandmarker.create_from_options(options)
+
+
+# Initialize hand landmarker
+try:
+    hand_landmarker = create_hand_landmarker()
+    if hand_landmarker is None:
+        print("Failed to initialize hand landmarker. Exiting.")
+        exit(1)
+except Exception as e:
+    print(f"Error initializing hand landmarker: {e}")
+    exit(1)
 
 # Initialize camera capture
 cap = cv2.VideoCapture(0)
@@ -75,7 +205,7 @@ def create_default_image():
 
 def set_volume(volume_percent):
     """
-    Set system volume on Linux (PulseAudio).
+    Set system volume cross-platform.
     
     Args:
         volume_percent: Volume level (0-100%)
@@ -86,20 +216,53 @@ def set_volume(volume_percent):
     # Clamp volume between 0-100%
     volume_percent = max(0, min(100, volume_percent))
     
-    # Set volume using pactl (PulseAudio)
-    os.system(f"pactl set-sink-volume @DEFAULT_SINK@ {volume_percent}%")
+    try:
+        if IS_WINDOWS and volume_controller is not None:
+            # Windows: use pycaw
+            # Volume range is typically -65.25 to 0.0 dB, or scalar 0.0 to 1.0
+            scalar = volume_percent / 100.0
+            volume_controller.SetMasterVolumeLevelScalar(scalar, None)
+        elif IS_LINUX:
+            # Linux: use pactl (PulseAudio)
+            subprocess.run(
+                ["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{volume_percent}%"],
+                check=True,
+                capture_output=True
+            )
+        else:
+            print(f"Volume control not supported on this platform: {platform.system()}")
+    except Exception as e:
+        print(f"Error setting volume: {e}")
     
     return volume_percent
 
 
 def get_current_volume():
-    """Get current system volume level."""
-    result = os.popen("pactl get-sink-volume @DEFAULT_SINK@").read()
-    # Parse command output to extract current volume
+    """Get current system volume level cross-platform."""
     try:
-        volume_str = result.split('/')[1].strip().split(' ')[0]
-        return int(volume_str.replace('%', ''))
-    except Exception:
+        if IS_WINDOWS and volume_controller is not None:
+            # Windows: use pycaw
+            current = volume_controller.GetMasterVolumeLevelScalar()
+            return int(current * 100)
+        elif IS_LINUX:
+            # Linux: use pactl
+            result = subprocess.run(
+                ["pactl", "get-sink-volume", "@DEFAULT_SINK@"],
+                capture_output=True,
+                text=True
+            )
+            # Parse command output to extract current volume
+            output = result.stdout
+            # Look for percentage in output like "Volume: front-left: 65536 / 100% / -0.00 dB"
+            import re
+            match = re.search(r'(\d+)%', output)
+            if match:
+                return int(match.group(1))
+            return 50  # Default value
+        else:
+            return 50  # Default for unsupported platforms
+    except Exception as e:
+        print(f"Error getting volume: {e}")
         return 50  # Default value
 
 
@@ -154,18 +317,18 @@ def is_gun_gesture(hand_landmarks):
         Boolean indicating if gun gesture is detected
     """
     # Get finger tip landmarks
-    thumb_tip = hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
-    index_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
-    middle_tip = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
-    ring_tip = hand_landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_TIP]
-    pinky_tip = hand_landmarks.landmark[mp_hands.HandLandmark.PINKY_TIP]
+    thumb_tip = hand_landmarks[HandLandmark.THUMB_TIP]
+    index_tip = hand_landmarks[HandLandmark.INDEX_FINGER_TIP]
+    middle_tip = hand_landmarks[HandLandmark.MIDDLE_FINGER_TIP]
+    ring_tip = hand_landmarks[HandLandmark.RING_FINGER_TIP]
+    pinky_tip = hand_landmarks[HandLandmark.PINKY_TIP]
     
     # Get finger base landmarks
-    thumb_mcp = hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_MCP]
-    index_mcp = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_MCP]
-    middle_mcp = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_MCP]
-    ring_mcp = hand_landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_MCP]
-    pinky_mcp = hand_landmarks.landmark[mp_hands.HandLandmark.PINKY_MCP]
+    thumb_mcp = hand_landmarks[HandLandmark.THUMB_MCP]
+    index_mcp = hand_landmarks[HandLandmark.INDEX_FINGER_MCP]
+    middle_mcp = hand_landmarks[HandLandmark.MIDDLE_FINGER_MCP]
+    ring_mcp = hand_landmarks[HandLandmark.RING_FINGER_MCP]
+    pinky_mcp = hand_landmarks[HandLandmark.PINKY_MCP]
     
     # Check if thumb and index fingers are raised
     thumb_raised = thumb_tip.y < thumb_mcp.y
@@ -190,17 +353,17 @@ def is_victory_gesture(hand_landmarks):
         Boolean indicating if victory gesture is detected
     """
     # Get finger tip landmarks
-    thumb_tip = hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
-    index_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
-    middle_tip = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
-    ring_tip = hand_landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_TIP]
-    pinky_tip = hand_landmarks.landmark[mp_hands.HandLandmark.PINKY_TIP]
+    thumb_tip = hand_landmarks[HandLandmark.THUMB_TIP]
+    index_tip = hand_landmarks[HandLandmark.INDEX_FINGER_TIP]
+    middle_tip = hand_landmarks[HandLandmark.MIDDLE_FINGER_TIP]
+    ring_tip = hand_landmarks[HandLandmark.RING_FINGER_TIP]
+    pinky_tip = hand_landmarks[HandLandmark.PINKY_TIP]
     
     # Get finger base landmarks
-    index_mcp = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_MCP]
-    middle_mcp = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_MCP]
-    ring_mcp = hand_landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_MCP]
-    pinky_mcp = hand_landmarks.landmark[mp_hands.HandLandmark.PINKY_MCP]
+    index_mcp = hand_landmarks[HandLandmark.INDEX_FINGER_MCP]
+    middle_mcp = hand_landmarks[HandLandmark.MIDDLE_FINGER_MCP]
+    ring_mcp = hand_landmarks[HandLandmark.RING_FINGER_MCP]
+    pinky_mcp = hand_landmarks[HandLandmark.PINKY_MCP]
     
     # Check if index and middle fingers are raised
     index_raised = index_tip.y < index_mcp.y
@@ -232,8 +395,8 @@ def is_clap_gesture(left_hand_landmarks, right_hand_landmarks):
         Tuple of (is_clap, distance) where is_clap is boolean and distance is float
     """
     # Get wrist positions of both hands
-    left_wrist = left_hand_landmarks.landmark[mp_hands.HandLandmark.WRIST]
-    right_wrist = right_hand_landmarks.landmark[mp_hands.HandLandmark.WRIST]
+    left_wrist = left_hand_landmarks[HandLandmark.WRIST]
+    right_wrist = right_hand_landmarks[HandLandmark.WRIST]
     
     # Calculate distance between wrist centers
     distance = np.sqrt(
@@ -266,6 +429,9 @@ print("Press 'q' to exit")
 # Variables for tracking previous gesture states
 prev_victory_detected = False
 
+# Initialize drawing utilities
+mp_drawing = DrawingUtils()
+
 # Main loop
 while cap.isOpened():
     ret, image = cap.read()
@@ -275,11 +441,14 @@ while cap.isOpened():
     # Flip frame horizontally for intuitive control
     image = cv2.flip(image, 1)
 
-    # Convert frame to RGB
+    # Convert frame to RGB for MediaPipe
     rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
+    
+    # Create MediaPipe Image object
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_image)
+    
     # Process hand detection
-    results = hands.process(rgb_image)
+    detection_result = hand_landmarker.detect(mp_image)
 
     # Hand tracking variables
     left_hand_detected = False
@@ -290,20 +459,20 @@ while cap.isOpened():
     victory_gesture = False  # Victory gesture flag for right hand
     
     # Draw hand landmarks and process gestures
-    if results.multi_hand_landmarks:
+    if detection_result.hand_landmarks:
         # Process each detected hand
-        for i, hand_landmarks in enumerate(results.multi_hand_landmarks):
+        for i, landmarks in enumerate(detection_result.hand_landmarks):
             # Determine hand type (left or right)
-            hand_label = results.multi_handedness[i].classification[0].label
+            handedness = detection_result.handedness[i][0].category_name
             
             # Note: Due to mirroring, hand labels are inverted
-            if hand_label == "Right":
+            if handedness == "Right":
                 hand_color = (0, 255, 0)  # Green for right hand (volume)
                 control_type = "VOLUME"
-                right_hand_landmarks = hand_landmarks
+                right_hand_landmarks = landmarks
                 
                 # Check victory gesture for right hand
-                victory_gesture = is_victory_gesture(hand_landmarks)
+                victory_gesture = is_victory_gesture(landmarks)
                 
                 # Toggle volume control with victory gesture
                 if victory_gesture and not prev_victory_detected:
@@ -317,8 +486,8 @@ while cap.isOpened():
                 # Process RIGHT hand (volume control) - only if active
                 if volume_control_active:
                     # Get thumb and index finger positions
-                    thumb_tip = hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
-                    index_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+                    thumb_tip = landmarks[HandLandmark.THUMB_TIP]
+                    index_tip = landmarks[HandLandmark.INDEX_FINGER_TIP]
                     
                     # Convert coordinates to pixels
                     thumb_x = int(thumb_tip.x * image.shape[1])
@@ -382,13 +551,13 @@ while cap.isOpened():
                 hand_color = (0, 0, 255)  # Red for left hand
                 control_type = "ICON"
                 left_hand_detected = True
-                left_hand_landmarks = hand_landmarks
+                left_hand_landmarks = landmarks
                 
                 # Check gun gesture for left hand
-                gun_gesture = is_gun_gesture(hand_landmarks)
+                gun_gesture = is_gun_gesture(landmarks)
                 
                 # Get wrist position for icon placement
-                wrist = hand_landmarks.landmark[mp_hands.HandLandmark.WRIST]
+                wrist = landmarks[HandLandmark.WRIST]
                 left_hand_x = int(wrist.x * image.shape[1]) - left_hand_image.shape[1] // 2
                 left_hand_y = int(wrist.y * image.shape[0]) - left_hand_image.shape[0] // 2
                 left_hand_position = (left_hand_x, left_hand_y)
@@ -399,13 +568,15 @@ while cap.isOpened():
                     cv2.FONT_HERSHEY_SIMPLEX, 1.0, hand_color, 2, cv2.LINE_AA
                 )
             
-            # Draw hand landmarks
+            # Draw hand landmarks using custom drawing utility
+            landmark_spec = DrawingSpec(color=hand_color, thickness=2, circle_radius=4)
+            connection_spec = DrawingSpec(color=hand_color, thickness=2)
             mp_drawing.draw_landmarks(
                 image, 
-                hand_landmarks, 
-                mp_hands.HAND_CONNECTIONS,
-                mp_drawing.DrawingSpec(color=hand_color, thickness=2, circle_radius=4),
-                mp_drawing.DrawingSpec(color=hand_color, thickness=2)
+                landmarks, 
+                HAND_CONNECTIONS,
+                landmark_drawing_spec=landmark_spec,
+                connection_drawing_spec=connection_spec
             )
 
         # Check clap gesture if both hands detected
